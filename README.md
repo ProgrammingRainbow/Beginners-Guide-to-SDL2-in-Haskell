@@ -1,1 +1,1 @@
-# Beginners-Guide-to-SDL2-in-Haskell
+# Beginners-Guide-to-SDL2
