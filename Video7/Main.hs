@@ -45,7 +45,7 @@ data GameData = GameData
     , gameBackground :: SDL.Texture
     , gameText :: SDL.Texture
     , gameSprite :: SDL.Texture
-    , gameCleanActs :: IORef [IO ()]
+    , gameActionsRef :: IORef [IO ()]
     }
 
 data GameState = GameState
@@ -55,151 +55,73 @@ data GameState = GameState
     }
 
 addClean :: IORef [IO ()] -> IO () -> IO ()
-addClean ref action = do
-    actions <- readIORef ref
-    writeIORef ref (action : actions)
+addClean actionsRef action = do
+    actions <- readIORef actionsRef
+    writeIORef actionsRef (action : actions)
 
-errorClean :: IORef [IO ()] -> SomeException -> String -> IO a
-errorClean ref e msg = do
-    hPutStrLn stderr (msg ++ show e)
-    actions <- readIORef ref
+errorClean :: IORef [IO ()] -> String -> SomeException -> IO a
+errorClean actionsRef errorMsg e = do
+    hPutStrLn stderr $ errorMsg ++ ":"
+    hPrint stderr e
+    actions <- readIORef actionsRef
     sequence_ actions
     exitFailure
 
 exitClean :: IORef [IO ()] -> IO ()
-exitClean ref = do
-    actions <- readIORef ref
+exitClean actionsRef = do
+    actions <- readIORef actionsRef
     sequence_ actions
     exitSuccess
 
+safeRun :: IO a -> String -> IORef [IO ()] -> IO a
+safeRun action errorMsg actionsRef =
+    catch action $ \e -> errorClean actionsRef errorMsg e
+
 initSDL :: IO (SDL.Window, SDL.Renderer, IORef [IO ()])
 initSDL = do
-    cleanActs <- newIORef [putStrLn "All Clean."]
+    actionsRef <- newIORef [putStrLn "All Clean."]
 
-    catch
+    safeRun
         SDL.initializeAll
-        ( \e -> do
-            errorClean cleanActs e "Error initializing SDL2: "
-        )
-    addClean cleanActs SDL.quit
+        "Error initialize SDL2"
+        actionsRef
+    addClean actionsRef SDL.quit
 
-    catch
+    safeRun
         (SDL.Image.initialize [SDL.Image.InitPNG])
-        ( \e -> do
-            errorClean cleanActs e "Error initializing SDL2 Image: "
-        )
-    addClean cleanActs SDL.Image.quit
+        "Error initializing SDL2 Image"
+        actionsRef
+    addClean actionsRef SDL.Image.quit
 
-    catch
+    safeRun
         SDL.Font.initialize
-        ( \e -> do
-            errorClean cleanActs e "Error initializing SDL2 Font: "
-        )
-    addClean cleanActs SDL.Font.quit
+        "Error initializing SDL2 Font"
+        actionsRef
+    addClean actionsRef SDL.Font.quit
 
     window <-
-        catch
+        safeRun
             (SDL.createWindow windowTitle myWindowConfig)
-            ( \e -> do
-                errorClean cleanActs e "Error creating the Window: "
-            )
-    addClean cleanActs $ SDL.destroyWindow window
+            "Error creating the Window"
+            actionsRef
+    addClean actionsRef $ SDL.destroyWindow window
 
     renderer <-
-        catch
+        safeRun
             (SDL.createRenderer window (-1) SDL.defaultRenderer)
-            ( \e -> do
-                errorClean cleanActs e "Error creation the Renderer: "
-            )
-    addClean cleanActs $ SDL.destroyRenderer renderer
+            "Error creation the Renderer"
+            actionsRef
+    addClean actionsRef $ SDL.destroyRenderer renderer
 
     icon <-
-        catch
-            (SDL.Image.load "images/Haskell-logo.png")
-            ( \e -> do
-                errorClean cleanActs e "Error loading Surface: "
-            )
+        safeRun
+            (SDL.Image.load "images/haskell-logo.png")
+            "Error loading Surface"
+            actionsRef
     SDL.setWindowIcon window icon
     SDL.freeSurface icon
 
-    return (window, renderer, cleanActs)
-
-loadMedia :: (SDL.Window, SDL.Renderer, IORef [IO ()]) -> IO GameData
-loadMedia (window, renderer, cleanActs) = do
-    background <-
-        catch
-            (SDL.Image.loadTexture renderer "images/background.png")
-            ( \e -> do
-                errorClean cleanActs e "Error loading a Texture: "
-            )
-    addClean cleanActs $ SDL.destroyTexture background
-
-    font <-
-        catch
-            (SDL.Font.load "fonts/freesansbold.ttf" fontSize)
-            ( \e -> do
-                errorClean cleanActs e "Error creating a Font: "
-            )
-    addClean cleanActs $ SDL.Font.free font
-
-    fontSurf <-
-        catch
-            (SDL.Font.blended font fontColor fontText)
-            ( \e -> do
-                errorClean cleanActs e "Error creating a Surface from Font: "
-            )
-    addClean cleanActs $ SDL.freeSurface fontSurf
-
-    text <-
-        catch
-            (SDL.createTextureFromSurface renderer fontSurf)
-            ( \e -> do
-                errorClean cleanActs e "Error creating a Texture from Surface: "
-            )
-    addClean cleanActs $ SDL.destroyTexture text
-
-    sprite <-
-        catch
-            (SDL.Image.loadTexture renderer "images/SDL.png")
-            ( \e -> do
-                errorClean cleanActs e "Error loading a Texture: "
-            )
-    addClean cleanActs $ SDL.destroyTexture sprite
-
-    return
-        GameData
-            { gameWindow = window
-            , gameRenderer = renderer
-            , gameBackground = background
-            , gameText = text
-            , gameSprite = sprite
-            , gameCleanActs = cleanActs
-            }
-
-createState :: GameData -> IO GameState
-createState gameData = do
-    let cleanActs = gameCleanActs gameData
-
-    textRect <-
-        catch
-            (rectFromTexture $ gameText gameData)
-            ( \e -> do
-                errorClean cleanActs e "Error querying Texture: "
-            )
-
-    spriteRect <-
-        catch
-            (rectFromTexture $ gameSprite gameData)
-            ( \e -> do
-                errorClean cleanActs e "Error querying Texture: "
-            )
-
-    return
-        GameState
-            { gameTextRect = textRect
-            , gameSpriteRect = spriteRect
-            , gameTextVel = (textVel, textVel)
-            }
+    return (window, renderer, actionsRef)
 
 rectFromTexture :: SDL.Texture -> IO (SDL.Rectangle CInt)
 rectFromTexture texture = do
@@ -209,6 +131,76 @@ rectFromTexture texture = do
         } <-
         SDL.queryTexture texture
     return $ SDL.Rectangle (SDL.P (SDL.V2 0 0)) (SDL.V2 textureWidth textureHeight)
+
+loadMedia :: (SDL.Window, SDL.Renderer, IORef [IO ()]) -> IO GameData
+loadMedia (window, renderer, actionsRef) = do
+    background <-
+        safeRun
+            (SDL.Image.loadTexture renderer "images/background.png")
+            "Error Loading a Texture"
+            actionsRef
+    addClean actionsRef $ SDL.destroyTexture background
+
+    font <-
+        safeRun
+            (SDL.Font.load "fonts/freesansbold.ttf" fontSize)
+            "Error creating a Font"
+            actionsRef
+    addClean actionsRef $ SDL.Font.free font
+
+    fontSurf <-
+        safeRun
+            (SDL.Font.blended font fontColor fontText)
+            "Error creating a Surface from Font"
+            actionsRef
+    addClean actionsRef $ SDL.freeSurface fontSurf
+
+    text <-
+        safeRun
+            (SDL.createTextureFromSurface renderer fontSurf)
+            "Error creating a Texture from Surface"
+            actionsRef
+    addClean actionsRef $ SDL.destroyTexture text
+
+    sprite <-
+        safeRun
+            (SDL.Image.loadTexture renderer "images/sdl-logo.png")
+            "Error loading a Texture"
+            actionsRef
+    addClean actionsRef $ SDL.destroyTexture sprite
+
+    return
+        GameData
+            { gameWindow = window
+            , gameRenderer = renderer
+            , gameBackground = background
+            , gameText = text
+            , gameSprite = sprite
+            , gameActionsRef = actionsRef
+            }
+
+createState :: GameData -> IO GameState
+createState gameData = do
+    let actionsRef = gameActionsRef gameData
+
+    textRect <-
+        safeRun
+            (rectFromTexture $ gameText gameData)
+            "Error querying Texture"
+            actionsRef
+
+    spriteRect <-
+        safeRun
+            (rectFromTexture $ gameSprite gameData)
+            "Error querying Texture"
+            actionsRef
+
+    return
+        GameState
+            { gameTextRect = textRect
+            , gameSpriteRect = spriteRect
+            , gameTextVel = (textVel, textVel)
+            }
 
 setRendererColor :: SDL.Renderer -> IO ()
 setRendererColor renderer = do
@@ -222,16 +214,16 @@ setRendererColor renderer = do
 handleEvents :: GameData -> [SDL.Event] -> IO ()
 handleEvents _ [] = return ()
 handleEvents gameData (event : rest) = do
-    let cleanActs = gameCleanActs gameData
+    let actionsRef = gameActionsRef gameData
         renderer = gameRenderer gameData
     case SDL.eventPayload event of
         SDL.KeyboardEvent keyboardEvent
             | SDL.keyboardEventKeyMotion keyboardEvent == SDL.Pressed ->
                 case SDL.keysymKeycode (SDL.keyboardEventKeysym keyboardEvent) of
-                    SDL.KeycodeEscape -> exitClean cleanActs
+                    SDL.KeycodeEscape -> exitClean actionsRef
                     SDL.KeycodeSpace -> setRendererColor renderer
                     _ -> return ()
-        SDL.QuitEvent -> exitClean cleanActs
+        SDL.QuitEvent -> exitClean actionsRef
         _ -> return ()
     handleEvents gameData rest
 
