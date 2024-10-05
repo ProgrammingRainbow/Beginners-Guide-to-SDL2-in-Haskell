@@ -3,7 +3,7 @@
 # Beginners Guide to SDL2 in Haskell
 An in-depth guide to getting started with SDL2 in Haskell.
 
-# Run
+## Build and Run
 You will need to make sure stack is installed.
 
 ArchLinux instructions.
@@ -14,7 +14,7 @@ git clone https://github.com/ProgrammingRainbow/Beginners-Guide-to-SDL2-in-Haske
 cd Beginners-Guide-to-SDL2-in-Haskell
 stack run
 ```
-# Controls
+## Controls
 Up, Down, Left, Right - Moves the Logo.\
 A, S, W, D - Moves the Logo.\
 Space - Changes background color.\
