@@ -1,14 +1,14 @@
-import Control.Exception
-import Control.Monad.State
-import Data.IORef
-import Data.Text (Text, pack)
-import Foreign.C.Types (CInt)
+import           Control.Exception
+import           Control.Monad.State
+import           Data.IORef
+import           Data.Text           (Text, pack)
+import           Foreign.C.Types     (CInt)
 import qualified SDL
 import qualified SDL.Font
 import qualified SDL.Image
-import System.Exit
-import System.IO
-import System.Random (randomRIO)
+import           System.Exit
+import           System.IO
+import           System.Random       (randomRIO)
 
 windowTitle :: Text
 windowTitle = pack "07 Player Sprite"
@@ -40,18 +40,18 @@ myWindowConfig =
         }
 
 data GameData = GameData
-    { gameWindow :: SDL.Window
-    , gameRenderer :: SDL.Renderer
+    { gameWindow     :: SDL.Window
+    , gameRenderer   :: SDL.Renderer
     , gameBackground :: SDL.Texture
-    , gameText :: SDL.Texture
-    , gameSprite :: SDL.Texture
+    , gameText       :: SDL.Texture
+    , gameSprite     :: SDL.Texture
     , gameActionsRef :: IORef [IO ()]
     }
 
 data GameState = GameState
-    { gameTextRect :: SDL.Rectangle CInt
+    { gameTextRect   :: SDL.Rectangle CInt
     , gameSpriteRect :: SDL.Rectangle CInt
-    , gameTextVel :: (CInt, CInt)
+    , gameTextVel    :: (CInt, CInt)
     }
 
 addClean :: IORef [IO ()] -> IO () -> IO ()
@@ -221,8 +221,8 @@ handleEvents gameData (event : rest) = do
             | SDL.keyboardEventKeyMotion keyboardEvent == SDL.Pressed ->
                 case SDL.keysymKeycode (SDL.keyboardEventKeysym keyboardEvent) of
                     SDL.KeycodeEscape -> exitClean actionsRef
-                    SDL.KeycodeSpace -> setRendererColor renderer
-                    _ -> return ()
+                    SDL.KeycodeSpace  -> setRendererColor renderer
+                    _                 -> return ()
         SDL.QuitEvent -> exitClean actionsRef
         _ -> return ()
     handleEvents gameData rest

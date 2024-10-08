@@ -1,11 +1,11 @@
-import Control.Exception
-import Data.IORef
-import Data.Text (Text, pack)
-import Foreign.C.Types (CInt)
+import           Control.Exception
+import           Data.IORef
+import           Data.Text         (Text, pack)
+import           Foreign.C.Types   (CInt)
 import qualified SDL
 import qualified SDL.Image
-import System.Exit
-import System.IO
+import           System.Exit
+import           System.IO
 
 windowTitle :: Text
 windowTitle = pack "03 Background"
@@ -22,8 +22,8 @@ myWindowConfig =
         }
 
 data GameData = GameData
-    { gameWindow :: SDL.Window
-    , gameRenderer :: SDL.Renderer
+    { gameWindow     :: SDL.Window
+    , gameRenderer   :: SDL.Renderer
     , gameBackground :: SDL.Texture
     , gameActionsRef :: IORef [IO ()]
     }
@@ -109,7 +109,7 @@ handleEvents gameData (event : rest) = do
             | SDL.keyboardEventKeyMotion keyboardEvent == SDL.Pressed ->
                 case SDL.keysymKeycode (SDL.keyboardEventKeysym keyboardEvent) of
                     SDL.KeycodeEscape -> exitClean actionsRef
-                    _ -> return ()
+                    _                 -> return ()
         SDL.QuitEvent -> exitClean actionsRef
         _ -> return ()
     handleEvents gameData rest

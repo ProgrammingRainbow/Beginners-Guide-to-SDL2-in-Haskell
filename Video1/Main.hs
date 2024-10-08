@@ -1,12 +1,12 @@
 -- {-# LANGUAGE OverloadedStrings #-}
 
-import Control.Exception
-import Data.IORef
-import Data.Text (Text, pack)
-import Foreign.C.Types (CInt)
+import           Control.Exception
+import           Data.IORef
+import           Data.Text         (Text, pack)
+import           Foreign.C.Types   (CInt)
 import qualified SDL
-import System.Exit
-import System.IO
+import           System.Exit
+import           System.IO
 
 windowTitle :: Text
 windowTitle = pack "01 Open Window"
@@ -23,8 +23,8 @@ myWindowConfig =
         }
 
 data GameData = GameData
-    { gameWindow :: SDL.Window
-    , gameRenderer :: SDL.Renderer
+    { gameWindow     :: SDL.Window
+    , gameRenderer   :: SDL.Renderer
     , gameActionsRef :: IORef [IO ()]
     }
 

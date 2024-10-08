@@ -1,15 +1,15 @@
-import Control.Exception
-import Control.Monad.State
-import Data.IORef
-import Data.Text (Text, pack)
-import Foreign.C.Types (CInt)
+import           Control.Exception
+import           Control.Monad.State
+import           Data.IORef
+import           Data.Text           (Text, pack)
+import           Foreign.C.Types     (CInt)
 import qualified SDL
 import qualified SDL.Font
 import qualified SDL.Image
 import qualified SDL.Mixer
-import System.Exit
-import System.IO
-import System.Random (randomRIO)
+import           System.Exit
+import           System.IO
+import           System.Random       (randomRIO)
 
 windowTitle :: Text
 windowTitle = pack "08 Sound Effects and Music"
@@ -47,21 +47,21 @@ myAudio =
         }
 
 data GameData = GameData
-    { gameWindow :: SDL.Window
-    , gameRenderer :: SDL.Renderer
-    , gameBackground :: SDL.Texture
-    , gameText :: SDL.Texture
-    , gameSprite :: SDL.Texture
+    { gameWindow       :: SDL.Window
+    , gameRenderer     :: SDL.Renderer
+    , gameBackground   :: SDL.Texture
+    , gameText         :: SDL.Texture
+    , gameSprite       :: SDL.Texture
     , gameHaskellSound :: SDL.Mixer.Chunk
-    , gameSDLSound :: SDL.Mixer.Chunk
-    , gameMusic :: SDL.Mixer.Music
-    , gameActionsRef :: IORef [IO ()]
+    , gameSDLSound     :: SDL.Mixer.Chunk
+    , gameMusic        :: SDL.Mixer.Music
+    , gameActionsRef   :: IORef [IO ()]
     }
 
 data GameState = GameState
-    { gameTextRect :: SDL.Rectangle CInt
+    { gameTextRect   :: SDL.Rectangle CInt
     , gameSpriteRect :: SDL.Rectangle CInt
-    , gameTextVel :: (CInt, CInt)
+    , gameTextVel    :: (CInt, CInt)
     }
 
 addClean :: IORef [IO ()] -> IO () -> IO ()
@@ -281,8 +281,8 @@ handleEvents gameData (event : rest) = do
             | SDL.keyboardEventKeyMotion keyboardEvent == SDL.Pressed ->
                 case SDL.keysymKeycode (SDL.keyboardEventKeysym keyboardEvent) of
                     SDL.KeycodeEscape -> exitClean actionsRef
-                    SDL.KeycodeSpace -> setRendererColor renderer sdlSound
-                    _ -> return ()
+                    SDL.KeycodeSpace  -> setRendererColor renderer sdlSound
+                    _                 -> return ()
         SDL.QuitEvent -> exitClean actionsRef
         _ -> return ()
     handleEvents gameData rest
