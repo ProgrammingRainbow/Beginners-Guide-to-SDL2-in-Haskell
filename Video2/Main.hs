@@ -1,7 +1,7 @@
 import           Control.Exception
-import           Data.IORef
-import           Data.Text         (Text, pack)
-import           Foreign.C.Types   (CInt)
+import           Control.Monad.State
+import           Data.Text           (Text, pack)
+import           Foreign.C.Types     (CInt)
 import qualified SDL
 import           System.Exit
 import           System.IO
@@ -21,80 +21,84 @@ myWindowConfig =
         }
 
 data GameData = GameData
-    { gameWindow     :: SDL.Window
-    , gameRenderer   :: SDL.Renderer
-    , gameActionsRef :: IORef [IO ()]
+    { gameWindow   :: SDL.Window
+    , gameRenderer :: SDL.Renderer
     }
 
-addClean :: IORef [IO ()] -> IO () -> IO ()
-addClean actionsRef action = do
-    actions <- readIORef actionsRef
-    writeIORef actionsRef (action : actions)
+newtype GameState = GameState
+    { gameActions :: [IO ()]
+    }
 
-errorClean :: IORef [IO ()] -> String -> SomeException -> IO a
-errorClean actionsRef errorMsg e = do
-    hPutStrLn stderr $ errorMsg ++ ":"
-    hPrint stderr e
-    actions <- readIORef actionsRef
-    sequence_ actions
-    exitFailure
+initialGameState :: GameState
+initialGameState =
+    GameState
+        { gameActions = []
+        }
 
-exitClean :: IORef [IO ()] -> IO ()
-exitClean actionsRef = do
-    actions <- readIORef actionsRef
-    sequence_ actions
-    exitSuccess
+addClean :: IO () -> StateT GameState IO ()
+addClean action = do
+    actions <- get
+    put $ actions{gameActions = action : gameActions actions}
 
-safeRun :: IO a -> String -> IORef [IO ()] -> IO a
-safeRun action errorMsg actionsRef =
-    catch action $ \e -> errorClean actionsRef errorMsg e
+errorClean :: [IO ()] -> String -> SomeException -> IO a
+errorClean actions errorMsg e = do
+    liftIO $ hPutStrLn stderr $ errorMsg ++ ":"
+    liftIO $ hPrint stderr e
+    liftIO $ sequence_ actions
+    liftIO exitFailure
 
-initSDL :: IO GameData
+exitClean :: StateT GameState IO ()
+exitClean = do
+    actions <- gets gameActions
+    liftIO $ sequence_ actions
+    liftIO exitSuccess
+
+safeRun :: IO a -> String -> StateT GameState IO a
+safeRun action errorMsg = do
+    actions <- gets gameActions
+    liftIO $ catch action $ errorClean actions errorMsg
+
+initSDL :: StateT GameState IO GameData
 initSDL = do
-    actionsRef <- newIORef [putStrLn "All Clean."]
+    addClean $ putStrLn "All Clean."
 
     safeRun
         SDL.initializeAll
-        "Error initialize SDL2"
-        actionsRef
-    addClean actionsRef SDL.quit
+        "Error initializing SDL2"
+    addClean SDL.quit
 
     window <-
         safeRun
             (SDL.createWindow windowTitle myWindowConfig)
             "Error creating the Window"
-            actionsRef
-    addClean actionsRef $ SDL.destroyWindow window
+    addClean $ SDL.destroyWindow window
 
     renderer <-
         safeRun
             (SDL.createRenderer window (-1) SDL.defaultRenderer)
-            "Error creation the Renderer"
-            actionsRef
-    addClean actionsRef $ SDL.destroyRenderer renderer
+            "Error creating the Renderer"
+    addClean $ SDL.destroyRenderer renderer
 
     return
         GameData
             { gameWindow = window
             , gameRenderer = renderer
-            , gameActionsRef = actionsRef
             }
 
-handleEvents :: GameData -> [SDL.Event] -> IO ()
+handleEvents :: GameData -> [SDL.Event] -> StateT GameState IO ()
 handleEvents _ [] = return ()
 handleEvents gameData (event : rest) = do
-    let actionsRef = gameActionsRef gameData
     case SDL.eventPayload event of
         SDL.KeyboardEvent keyboardEvent
             | SDL.keyboardEventKeyMotion keyboardEvent == SDL.Pressed ->
                 case SDL.keysymKeycode (SDL.keyboardEventKeysym keyboardEvent) of
-                    SDL.KeycodeEscape -> exitClean actionsRef
+                    SDL.KeycodeEscape -> exitClean
                     _                 -> return ()
-        SDL.QuitEvent -> exitClean actionsRef
+        SDL.QuitEvent -> exitClean
         _ -> return ()
     handleEvents gameData rest
 
-gameLoop :: GameData -> IO ()
+gameLoop :: GameData -> StateT GameState IO ()
 gameLoop gameData = do
     let renderer = gameRenderer gameData
 
@@ -110,6 +114,4 @@ gameLoop gameData = do
 
 main :: IO ()
 main = do
-    gameData <- initSDL
-
-    gameLoop gameData
+    evalStateT (initSDL >>= gameLoop) initialGameState

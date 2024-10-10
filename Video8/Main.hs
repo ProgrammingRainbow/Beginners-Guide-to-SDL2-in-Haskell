@@ -1,6 +1,5 @@
 import           Control.Exception
 import           Control.Monad.State
-import           Data.IORef
 import           Data.Text           (Text, pack)
 import           Foreign.C.Types     (CInt)
 import qualified SDL
@@ -55,95 +54,96 @@ data GameData = GameData
     , gameHaskellSound :: SDL.Mixer.Chunk
     , gameSDLSound     :: SDL.Mixer.Chunk
     , gameMusic        :: SDL.Mixer.Music
-    , gameActionsRef   :: IORef [IO ()]
     }
 
 data GameState = GameState
-    { gameTextRect   :: SDL.Rectangle CInt
-    , gameSpriteRect :: SDL.Rectangle CInt
+    { gameActions    :: [IO ()]
+    , gameTextRect   :: SDL.Rectangle CInt
     , gameTextVel    :: (CInt, CInt)
+    , gameSpriteRect :: SDL.Rectangle CInt
     }
 
-addClean :: IORef [IO ()] -> IO () -> IO ()
-addClean actionsRef action = do
-    actions <- readIORef actionsRef
-    writeIORef actionsRef (action : actions)
+initialGameState :: GameState
+initialGameState =
+    GameState
+        { gameActions = []
+        , gameTextRect = SDL.Rectangle (SDL.P (SDL.V2 0 0)) (SDL.V2 0 0)
+        , gameTextVel = (textVel, textVel)
+        , gameSpriteRect = SDL.Rectangle (SDL.P (SDL.V2 0 0)) (SDL.V2 0 0)
+        }
 
-errorClean :: IORef [IO ()] -> String -> SomeException -> IO a
-errorClean actionsRef errorMsg e = do
-    hPutStrLn stderr $ errorMsg ++ ":"
-    hPrint stderr e
-    actions <- readIORef actionsRef
-    sequence_ actions
-    exitFailure
+addClean :: IO () -> StateT GameState IO ()
+addClean action = do
+    actions <- get
+    put $ actions{gameActions = action : gameActions actions}
 
-exitClean :: IORef [IO ()] -> IO ()
-exitClean actionsRef = do
-    actions <- readIORef actionsRef
-    sequence_ actions
-    exitSuccess
+errorClean :: [IO ()] -> String -> SomeException -> IO a
+errorClean actions errorMsg e = do
+    liftIO $ hPutStrLn stderr $ errorMsg ++ ":"
+    liftIO $ hPrint stderr e
+    liftIO $ sequence_ actions
+    liftIO exitFailure
 
-safeRun :: IO a -> String -> IORef [IO ()] -> IO a
-safeRun action errorMsg actionsRef =
-    catch action $ \e -> errorClean actionsRef errorMsg e
+exitClean :: StateT GameState IO ()
+exitClean = do
+    actions <- gets gameActions
+    liftIO $ sequence_ actions
+    liftIO exitSuccess
 
-initSDL :: IO (SDL.Window, SDL.Renderer, IORef [IO ()])
+safeRun :: IO a -> String -> StateT GameState IO a
+safeRun action errorMsg = do
+    actions <- gets gameActions
+    liftIO $ catch action $ errorClean actions errorMsg
+
+initSDL :: StateT GameState IO (SDL.Window, SDL.Renderer)
 initSDL = do
-    actionsRef <- newIORef [putStrLn "All Clean."]
+    addClean $ putStrLn "All Clean."
 
     safeRun
         SDL.initializeAll
-        "Error initialize SDL2"
-        actionsRef
-    addClean actionsRef SDL.quit
+        "Error initializing SDL2"
+    addClean SDL.quit
 
     safeRun
         (SDL.Image.initialize [SDL.Image.InitPNG])
         "Error initializing SDL2 Image"
-        actionsRef
-    addClean actionsRef SDL.Image.quit
+    addClean SDL.Image.quit
 
     safeRun
         SDL.Font.initialize
         "Error initializing SDL2 Font"
-        actionsRef
-    addClean actionsRef SDL.Font.quit
+    addClean SDL.Font.quit
 
     safeRun
         (SDL.Mixer.initialize [SDL.Mixer.InitOGG])
         "Error initializing SDL2 Mixer"
-        actionsRef
-    addClean actionsRef SDL.Mixer.quit
+    addClean SDL.Mixer.quit
 
     safeRun
         (SDL.Mixer.openAudio myAudio 1024)
         "Error initializing SDL2 Mixer"
-        actionsRef
-    addClean actionsRef SDL.Mixer.closeAudio
+    addClean SDL.Mixer.closeAudio
 
     window <-
         safeRun
             (SDL.createWindow windowTitle myWindowConfig)
             "Error creating the Window"
-            actionsRef
-    addClean actionsRef $ SDL.destroyWindow window
+    addClean $ SDL.destroyWindow window
 
     renderer <-
         safeRun
             (SDL.createRenderer window (-1) SDL.defaultRenderer)
-            "Error creation the Renderer"
-            actionsRef
-    addClean actionsRef $ SDL.destroyRenderer renderer
+            "Error creating the Renderer"
+    addClean $ SDL.destroyRenderer renderer
 
     icon <-
         safeRun
             (SDL.Image.load "images/haskell-logo.png")
             "Error loading Surface"
-            actionsRef
     SDL.setWindowIcon window icon
     SDL.freeSurface icon
 
-    return (window, renderer, actionsRef)
+    return (window, renderer)
 
 rectFromTexture :: SDL.Texture -> IO (SDL.Rectangle CInt)
 rectFromTexture texture = do
@@ -154,66 +154,79 @@ rectFromTexture texture = do
         SDL.queryTexture texture
     return $ SDL.Rectangle (SDL.P (SDL.V2 0 0)) (SDL.V2 textureWidth textureHeight)
 
-loadMedia :: (SDL.Window, SDL.Renderer, IORef [IO ()]) -> IO GameData
-loadMedia (window, renderer, actionsRef) = do
+loadMedia :: (SDL.Window, SDL.Renderer) -> StateT GameState IO GameData
+loadMedia (window, renderer) = do
     background <-
         safeRun
             (SDL.Image.loadTexture renderer "images/background.png")
             "Error Loading a Texture"
-            actionsRef
-    addClean actionsRef $ SDL.destroyTexture background
+    addClean $ SDL.destroyTexture background
 
     font <-
         safeRun
             (SDL.Font.load "fonts/freesansbold.ttf" fontSize)
             "Error creating a Font"
-            actionsRef
-    addClean actionsRef $ SDL.Font.free font
+    addClean $ SDL.Font.free font
 
     fontSurf <-
         safeRun
             (SDL.Font.blended font fontColor fontText)
             "Error creating a Surface from Font"
-            actionsRef
-    addClean actionsRef $ SDL.freeSurface fontSurf
+    addClean $ SDL.freeSurface fontSurf
 
     text <-
         safeRun
             (SDL.createTextureFromSurface renderer fontSurf)
             "Error creating a Texture from Surface"
-            actionsRef
-    addClean actionsRef $ SDL.destroyTexture text
+    addClean $ SDL.destroyTexture text
 
     sprite <-
         safeRun
             (SDL.Image.loadTexture renderer "images/sdl-logo.png")
             "Error loading a Texture"
-            actionsRef
-    addClean actionsRef $ SDL.destroyTexture sprite
+    addClean $ SDL.destroyTexture sprite
+
+    textRect <-
+        safeRun
+            (rectFromTexture text)
+            "Error querying Texture"
+
+    spriteRect <-
+        safeRun
+            (rectFromTexture sprite)
+            "Error querying Texture"
+
+    modify $
+        \actions ->
+            actions
+                { gameTextRect = textRect
+                , gameSpriteRect = spriteRect
+                }
 
     haskellSound <-
         safeRun
             (SDL.Mixer.load "sounds/Haskell.ogg")
             "Error loading Chunk"
-            actionsRef
-    addClean actionsRef $ SDL.Mixer.free haskellSound
+    addClean $ SDL.Mixer.free haskellSound
 
     sdlSound <-
         safeRun
             (SDL.Mixer.load "sounds/SDL.ogg")
             "Error loading Chunk"
-            actionsRef
-    addClean actionsRef $ SDL.Mixer.free sdlSound
+    addClean $ SDL.Mixer.free sdlSound
 
     music <-
         safeRun
-            (SDL.Mixer.load "music/freesoftwaresong-8bit.wav")
+            (SDL.Mixer.load "music/freesoftwaresong-8bit.ogg")
             "Error loading Music"
-            actionsRef
-    addClean actionsRef $ SDL.Mixer.free music
+    addClean $ SDL.Mixer.free music
 
-    addClean actionsRef $ SDL.Mixer.halt SDL.Mixer.AllChannels
-    addClean actionsRef SDL.Mixer.haltMusic
+    addClean $ SDL.Mixer.halt SDL.Mixer.AllChannels
+    addClean SDL.Mixer.haltMusic
+
+    safeRun
+        (SDL.Mixer.playMusic SDL.Mixer.Forever music)
+        "Error Playing Music"
 
     return
         GameData
@@ -225,30 +238,6 @@ loadMedia (window, renderer, actionsRef) = do
             , gameHaskellSound = haskellSound
             , gameSDLSound = sdlSound
             , gameMusic = music
-            , gameActionsRef = actionsRef
-            }
-
-createState :: GameData -> IO GameState
-createState gameData = do
-    let actionsRef = gameActionsRef gameData
-
-    textRect <-
-        safeRun
-            (rectFromTexture $ gameText gameData)
-            "Error querying Texture"
-            actionsRef
-
-    spriteRect <-
-        safeRun
-            (rectFromTexture $ gameSprite gameData)
-            "Error querying Texture"
-            actionsRef
-
-    return
-        GameState
-            { gameTextRect = textRect
-            , gameSpriteRect = spriteRect
-            , gameTextVel = (textVel, textVel)
             }
 
 setRendererColor :: SDL.Renderer -> SDL.Mixer.Chunk -> IO ()
@@ -270,20 +259,19 @@ playChunk chunk = do
             return ()
         Nothing -> return ()
 
-handleEvents :: GameData -> [SDL.Event] -> IO ()
+handleEvents :: GameData -> [SDL.Event] -> StateT GameState IO ()
 handleEvents _ [] = return ()
 handleEvents gameData (event : rest) = do
-    let actionsRef = gameActionsRef gameData
-        renderer = gameRenderer gameData
+    let renderer = gameRenderer gameData
         sdlSound = gameSDLSound gameData
     case SDL.eventPayload event of
         SDL.KeyboardEvent keyboardEvent
             | SDL.keyboardEventKeyMotion keyboardEvent == SDL.Pressed ->
                 case SDL.keysymKeycode (SDL.keyboardEventKeysym keyboardEvent) of
-                    SDL.KeycodeEscape -> exitClean actionsRef
-                    SDL.KeycodeSpace  -> setRendererColor renderer sdlSound
-                    _                 -> return ()
-        SDL.QuitEvent -> exitClean actionsRef
+                    SDL.KeycodeEscape -> exitClean
+                    SDL.KeycodeSpace -> liftIO $ setRendererColor renderer sdlSound
+                    _ -> return ()
+        SDL.QuitEvent -> exitClean
         _ -> return ()
     handleEvents gameData rest
 
@@ -343,20 +331,18 @@ spriteUpdate = do
 
 gameLoop :: GameData -> StateT GameState IO ()
 gameLoop gameData = do
-    gameState <- get
-    let textRect = gameTextRect gameState
-        spriteRect = gameSpriteRect gameState
-
     let renderer = gameRenderer gameData
         background = gameBackground gameData
         text = gameText gameData
         sprite = gameSprite gameData
         haskellSound = gameHaskellSound gameData
 
-    liftIO $ SDL.pollEvents >>= handleEvents gameData
+    SDL.pollEvents >>= handleEvents gameData
 
     textUpdate haskellSound
     spriteUpdate
+    textRect <- gets gameTextRect
+    spriteRect <- gets gameSpriteRect
 
     SDL.clear renderer
 
@@ -372,9 +358,4 @@ gameLoop gameData = do
 
 main :: IO ()
 main = do
-    gameData <- initSDL >>= loadMedia
-    gameState <- createState gameData
-
-    SDL.Mixer.playMusic SDL.Mixer.Forever $ gameMusic gameData
-
-    evalStateT (gameLoop gameData) gameState
+    evalStateT (initSDL >>= loadMedia >>= gameLoop) initialGameState
