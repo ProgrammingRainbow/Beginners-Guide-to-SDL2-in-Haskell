@@ -37,8 +37,13 @@ initialGameState =
 
 addClean :: IO () -> StateT GameState IO ()
 addClean action = do
-    actions <- get
-    put $ actions{gameActions = action : gameActions actions}
+    modify (\gameState -> gameState{gameActions = action : gameActions gameState})
+
+exitClean :: StateT GameState IO ()
+exitClean = do
+    actions <- gets gameActions
+    liftIO $ sequence_ actions
+    liftIO exitSuccess
 
 errorClean :: [IO ()] -> String -> SomeException -> IO a
 errorClean actions errorMsg e = do
@@ -47,12 +52,6 @@ errorClean actions errorMsg e = do
     liftIO $ sequence_ actions
     liftIO exitFailure
 
-exitClean :: StateT GameState IO ()
-exitClean = do
-    actions <- gets gameActions
-    liftIO $ sequence_ actions
-    liftIO exitSuccess
-
 safeRun :: IO a -> String -> StateT GameState IO a
 safeRun action errorMsg = do
     actions <- gets gameActions
@@ -60,7 +59,7 @@ safeRun action errorMsg = do
 
 initSDL :: StateT GameState IO GameData
 initSDL = do
-    addClean $ putStrLn "All Clean."
+    addClean $ putStrLn "All Clean!"
 
     safeRun
         SDL.initializeAll
@@ -70,13 +69,13 @@ initSDL = do
     window <-
         safeRun
             (SDL.createWindow windowTitle myWindowConfig)
-            "Error creating the Window"
+            "Error creating Window"
     addClean $ SDL.destroyWindow window
 
     renderer <-
         safeRun
             (SDL.createRenderer window (-1) SDL.defaultRenderer)
-            "Error creating the Renderer"
+            "Error creating Renderer"
     addClean $ SDL.destroyRenderer renderer
 
     return
