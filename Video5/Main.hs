@@ -52,8 +52,13 @@ initialGameState =
 
 addClean :: IO () -> StateT GameState IO ()
 addClean action = do
-    actions <- get
-    put $ actions{gameActions = action : gameActions actions}
+    modify (\gameState -> gameState{gameActions = action : gameActions gameState})
+
+exitClean :: StateT GameState IO ()
+exitClean = do
+    actions <- gets gameActions
+    liftIO $ sequence_ actions
+    liftIO exitSuccess
 
 errorClean :: [IO ()] -> String -> SomeException -> IO a
 errorClean actions errorMsg e = do
@@ -62,12 +67,6 @@ errorClean actions errorMsg e = do
     liftIO $ sequence_ actions
     liftIO exitFailure
 
-exitClean :: StateT GameState IO ()
-exitClean = do
-    actions <- gets gameActions
-    liftIO $ sequence_ actions
-    liftIO exitSuccess
-
 safeRun :: IO a -> String -> StateT GameState IO a
 safeRun action errorMsg = do
     actions <- gets gameActions
@@ -75,7 +74,7 @@ safeRun action errorMsg = do
 
 initSDL :: StateT GameState IO (SDL.Window, SDL.Renderer)
 initSDL = do
-    addClean $ putStrLn "All Clean."
+    addClean $ putStrLn "All Clean!"
 
     safeRun
         SDL.initializeAll
@@ -95,13 +94,13 @@ initSDL = do
     window <-
         safeRun
             (SDL.createWindow windowTitle myWindowConfig)
-            "Error creating the Window"
+            "Error creating Window"
     addClean $ SDL.destroyWindow window
 
     renderer <-
         safeRun
             (SDL.createRenderer window (-1) SDL.defaultRenderer)
-            "Error creating the Renderer"
+            "Error creating Renderer"
     addClean $ SDL.destroyRenderer renderer
 
     icon <-
@@ -113,45 +112,41 @@ initSDL = do
 
     return (window, renderer)
 
-rectFromTexture :: SDL.Texture -> IO (SDL.Rectangle CInt)
-rectFromTexture texture = do
-    SDL.TextureInfo
-        { SDL.textureWidth = textureWidth
-        , SDL.textureHeight = textureHeight
-        } <-
-        SDL.queryTexture texture
-    return $ SDL.Rectangle (SDL.P (SDL.V2 0 0)) (SDL.V2 textureWidth textureHeight)
+rectFromSurface :: SDL.Surface -> IO (SDL.Rectangle CInt)
+rectFromSurface surface = do
+    SDL.V2 surfaceW surfaceH <- SDL.surfaceDimensions surface
+    return $ SDL.Rectangle (SDL.P (SDL.V2 0 0)) (SDL.V2 surfaceW surfaceH)
 
 loadMedia :: (SDL.Window, SDL.Renderer) -> StateT GameState IO GameData
 loadMedia (window, renderer) = do
     background <-
         safeRun
             (SDL.Image.loadTexture renderer "images/background.png")
-            "Error Loading a Texture"
+            "Error loading Texture"
     addClean $ SDL.destroyTexture background
 
     font <-
         safeRun
             (SDL.Font.load "fonts/freesansbold.ttf" fontSize)
-            "Error creating a Font"
+            "Error creating Font"
     addClean $ SDL.Font.free font
 
     fontSurf <-
         safeRun
             (SDL.Font.blended font fontColor fontText)
-            "Error creating a Surface from Font"
+            "Error creating Surface from Font"
     addClean $ SDL.freeSurface fontSurf
 
     text <-
         safeRun
             (SDL.createTextureFromSurface renderer fontSurf)
-            "Error creating a Texture from Surface"
+            "Error creating Texture from Surface"
     addClean $ SDL.destroyTexture text
 
     textRect <-
         safeRun
-            (rectFromTexture text)
-            "Error querying Texture"
+            (rectFromSurface fontSurf)
+            "Error creating Rectange from Surface"
 
     return
         GameData
@@ -168,12 +163,11 @@ setRendererColor renderer = do
     g <- randomRIO (0, 255)
     b <- randomRIO (0, 255)
 
-    let color = SDL.V4 r g b 255
-    SDL.rendererDrawColor renderer SDL.$= color
+    SDL.rendererDrawColor renderer SDL.$= SDL.V4 r g b 255
 
 handleEvents :: GameData -> [SDL.Event] -> StateT GameState IO ()
 handleEvents _ [] = return ()
-handleEvents gameData (event : rest) = do
+handleEvents gameData (event : events) = do
     let renderer = gameRenderer gameData
     case SDL.eventPayload event of
         SDL.KeyboardEvent keyboardEvent
@@ -184,7 +178,7 @@ handleEvents gameData (event : rest) = do
                     _                 -> return ()
         SDL.QuitEvent -> exitClean
         _ -> return ()
-    handleEvents gameData rest
+    handleEvents gameData events
 
 gameLoop :: GameData -> StateT GameState IO ()
 gameLoop gameData = do
