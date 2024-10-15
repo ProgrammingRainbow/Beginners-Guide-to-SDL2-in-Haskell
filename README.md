@@ -1,5 +1,5 @@
 ![Screenshot](screenshot.png)
-
+https://www.youtube.com/playlist?list=PLO02jwa2ZaiCej8ZpkhHKGN65v7pV1pMt
 # Beginners Guide to SDL2 in Haskell
 An in-depth guide to getting started with SDL2 in Haskell.
 
