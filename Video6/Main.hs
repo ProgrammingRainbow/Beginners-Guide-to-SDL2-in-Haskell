@@ -149,18 +149,12 @@ loadMedia (window, renderer) = do
             "Error creating Texture from Surface"
     addClean $ SDL.destroyTexture text
 
-    sprite <-
-        safeRun
-            (SDL.Image.loadTexture renderer "images/sdl-logo.png")
-            "Error loading a Texture"
-    addClean $ SDL.destroyTexture sprite
-
     textRect <-
         safeRun
             (rectFromSurface fontSurf)
             "Error creating Rectange from Surface"
 
-    modify $ \gameState -> gameState{gameTextRect = textRect}
+    modify (\gameState -> gameState{gameTextRect = textRect})
 
     return
         GameData
@@ -193,22 +187,22 @@ handleEvents gameData (event : events) = do
         _ -> return ()
     handleEvents gameData events
 
-textUpdate :: StateT GameState IO ()
+textUpdate :: StateT GameState IO (SDL.Rectangle CInt)
 textUpdate = do
     gameState <- get
 
     let SDL.Rectangle (SDL.P (SDL.V2 oldX oldY)) (SDL.V2 w h) = gameTextRect gameState
-    let (xVel, yVel) = gameTextVel gameState
+    let (oldXVel, oldYVel) = gameTextVel gameState
 
     let (newX, newXVel)
-            | xVel < 0 && oldX < 0 = (0, xVel * (-1))
-            | xVel > 0 && (oldX + w) > screenWidth = (screenWidth - w, xVel * (-1))
-            | otherwise = (oldX + xVel, xVel)
+            | (oldX + oldXVel) < 0 && oldXVel < 0 = (0, textVel)
+            | (oldX + oldXVel + w) > screenWidth && oldXVel > 0 = (screenWidth - w, -textVel)
+            | otherwise = (oldX + oldXVel, oldXVel)
 
     let (newY, newYVel)
-            | yVel < 0 && oldY < 0 = (0, yVel * (-1))
-            | yVel > 0 && (oldY + h) > screenHeight = (screenHeight - h, yVel * (-1))
-            | otherwise = (oldY + yVel, yVel)
+            | (oldY + oldYVel) < 0 && oldYVel < 0 = (0, textVel)
+            | (oldY + oldYVel + h) > screenHeight && oldYVel > 0 = (screenHeight - h, -textVel)
+            | otherwise = (oldY + oldYVel, oldYVel)
 
     let textRect = SDL.Rectangle (SDL.P (SDL.V2 newX newY)) (SDL.V2 w h)
 
@@ -218,6 +212,8 @@ textUpdate = do
             , gameTextVel = (newXVel, newYVel)
             }
 
+    return textRect
+
 gameLoop :: GameData -> StateT GameState IO ()
 gameLoop gameData = do
     let renderer = gameRenderer gameData
@@ -226,8 +222,7 @@ gameLoop gameData = do
 
     SDL.pollEvents >>= handleEvents gameData
 
-    textUpdate
-    textRect <- gets gameTextRect
+    textRect <- textUpdate
 
     SDL.clear renderer
 
