@@ -11,7 +11,7 @@ import           System.IO
 import           System.Random       (randomRIO)
 
 windowTitle :: Text
-windowTitle = pack "08 Sound Effects and Music"
+windowTitle = pack "08 Music & Sound Effects"
 
 screenWidth, screenHeight :: CInt
 screenWidth = 800
@@ -32,6 +32,9 @@ textVel = 3
 spriteVel :: CInt
 spriteVel = 5
 
+chunkSize :: Int
+chunkSize = 1024
+
 myWindowConfig :: SDL.WindowConfig
 myWindowConfig =
     SDL.defaultWindow
@@ -39,8 +42,8 @@ myWindowConfig =
         , SDL.windowInitialSize = SDL.V2 screenWidth screenHeight
         }
 
-myAudio :: SDL.Mixer.Audio
-myAudio =
+myAudioConfig :: SDL.Mixer.Audio
+myAudioConfig =
     SDL.Mixer.defaultAudio
         { SDL.Mixer.audioFrequency = 44100
         }
@@ -119,8 +122,8 @@ initSDL = do
     addClean SDL.Mixer.quit
 
     safeRun
-        (SDL.Mixer.openAudio myAudio 1024)
-        "Error initializing SDL2 Mixer"
+        (SDL.Mixer.openAudio myAudioConfig chunkSize)
+        "Error opening Audio"
     addClean SDL.Mixer.closeAudio
 
     window <-
@@ -211,26 +214,26 @@ loadMedia (window, renderer) = do
         safeRun
             (SDL.Mixer.load "sounds/Haskell.ogg")
             "Error loading Chunk"
-    addClean $ SDL.Mixer.free haskellSound
+    addClean (SDL.Mixer.free haskellSound)
 
     sdlSound <-
         safeRun
             (SDL.Mixer.load "sounds/SDL.ogg")
             "Error loading Chunk"
-    addClean $ SDL.Mixer.free sdlSound
+    addClean (SDL.Mixer.free sdlSound)
 
     music <-
         safeRun
             (SDL.Mixer.load "music/freesoftwaresong-8bit.ogg")
             "Error loading Music"
-    addClean $ SDL.Mixer.free music
+    addClean (SDL.Mixer.free music)
 
     addClean $ SDL.Mixer.halt SDL.Mixer.AllChannels
     addClean SDL.Mixer.haltMusic
 
     safeRun
         (SDL.Mixer.playMusic SDL.Mixer.Forever music)
-        "Error Playing Music"
+        "Error playing Music"
 
     return
         GameData
@@ -247,11 +250,10 @@ loadMedia (window, renderer) = do
 playChunk :: SDL.Mixer.Chunk -> IO ()
 playChunk chunk = do
     maybeChannel <- SDL.Mixer.getAvailable SDL.Mixer.DefaultGroup
+
     case maybeChannel of
-        Just channel -> do
-            _ <- SDL.Mixer.playOn channel 1 chunk
-            return ()
-        Nothing -> return ()
+        Just channel -> void (SDL.Mixer.playOn channel 1 chunk)
+        Nothing      -> return ()
 
 setRendererColor :: SDL.Renderer -> SDL.Mixer.Chunk -> IO ()
 setRendererColor renderer sdlSound = do
@@ -260,19 +262,42 @@ setRendererColor renderer sdlSound = do
     b <- randomRIO (0, 255)
 
     SDL.rendererDrawColor renderer SDL.$= SDL.V4 r g b 255
+
     playChunk sdlSound
+
+toggleMusic :: IO ()
+toggleMusic = do
+    paused <- SDL.Mixer.pausedMusic
+
+    if paused
+        then SDL.Mixer.resumeMusic
+        else SDL.Mixer.pauseMusic
+
+toggleMusic2 :: SDL.Mixer.Music -> StateT GameState IO ()
+toggleMusic2 music = do
+    playing <- SDL.Mixer.playingMusic
+
+    if playing
+        then SDL.Mixer.haltMusic
+        else
+            safeRun
+                (SDL.Mixer.playMusic SDL.Mixer.Forever music)
+                "Error playing Music"
 
 handleEvents :: GameData -> [SDL.Event] -> StateT GameState IO ()
 handleEvents _ [] = return ()
 handleEvents gameData (event : events) = do
     let renderer = gameRenderer gameData
         sdlSound = gameSDLSound gameData
+        music = gameMusic gameData
     case SDL.eventPayload event of
         SDL.KeyboardEvent keyboardEvent
             | SDL.keyboardEventKeyMotion keyboardEvent == SDL.Pressed ->
                 case SDL.keysymKeycode (SDL.keyboardEventKeysym keyboardEvent) of
                     SDL.KeycodeEscape -> exitClean
                     SDL.KeycodeSpace -> liftIO $ setRendererColor renderer sdlSound
+                    SDL.KeycodeM -> liftIO toggleMusic
+                    SDL.KeycodeO -> toggleMusic2 music
                     _ -> return ()
         SDL.QuitEvent -> exitClean
         _ -> return ()
